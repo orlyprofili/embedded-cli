@@ -170,6 +170,18 @@ struct EmbeddedCliConfig {
      * complete current command manually.
      */
     bool enableAutoComplete;
+
+    /**
+     * Whether to attempt autocompletion automatically when Enter is pressed.
+     * If false, commands are executed as typed unless Tab is used explicitly.
+     */
+    bool autoCompleteOnEnter;
+
+    /**
+     * Whether to register built-in helper commands (like the default "help").
+     * If false, the application is responsible for providing its own help.
+     */
+    bool enableInternalHelp;
 };
 
 /**

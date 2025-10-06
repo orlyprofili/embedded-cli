@@ -173,6 +173,11 @@ struct EmbeddedCliImpl {
     uint8_t flags;
 
     /**
+     * Indicates whether Enter should trigger auto-completion.
+     */
+    bool autoCompleteOnEnter;
+
+    /**
      * Cursor position for current command from right to left 
      * 0 = end of command
      */
@@ -210,6 +215,13 @@ static EmbeddedCliConfig defaultConfig;
 static const uint16_t cliInternalBindingCount = 1;
 
 static const char *lineBreak = "\r\n";
+
+static uint16_t getInternalBindingReservation(const EmbeddedCliConfig *config) {
+    if (config == NULL) {
+        return cliInternalBindingCount;
+    }
+    return config->enableInternalHelp ? cliInternalBindingCount : 0;
+}
 
 /* References for VT100 escape sequences: 
  * https://learn.microsoft.com/en-us/windows/console/console-virtual-terminal-sequences 
@@ -434,12 +446,14 @@ EmbeddedCliConfig *embeddedCliDefaultConfig(void) {
     defaultConfig.cliBufferSize = 0;
     defaultConfig.maxBindingCount = 8;
     defaultConfig.enableAutoComplete = true;
+    defaultConfig.autoCompleteOnEnter = true;
+    defaultConfig.enableInternalHelp = true;
     defaultConfig.invitation = "> ";
     return &defaultConfig;
 }
 
 uint16_t embeddedCliRequiredSize(EmbeddedCliConfig *config) {
-    uint16_t bindingCount = (uint16_t) (config->maxBindingCount + cliInternalBindingCount);
+    uint16_t bindingCount = (uint16_t) (config->maxBindingCount + getInternalBindingReservation(config));
     return (uint16_t) (CLI_UINT_SIZE * (
             BYTES_TO_CLI_UINTS(sizeof(EmbeddedCli)) +
             BYTES_TO_CLI_UINTS(sizeof(EmbeddedCliImpl)) +
@@ -453,7 +467,8 @@ uint16_t embeddedCliRequiredSize(EmbeddedCliConfig *config) {
 EmbeddedCli *embeddedCliNew(EmbeddedCliConfig *config) {
     EmbeddedCli *cli = NULL;
 
-    uint16_t bindingCount = (uint16_t) (config->maxBindingCount + cliInternalBindingCount);
+    uint16_t internalReservation = getInternalBindingReservation(config);
+    uint16_t bindingCount = (uint16_t) (config->maxBindingCount + internalReservation);
 
     size_t totalSize = embeddedCliRequiredSize(config);
 
@@ -504,12 +519,15 @@ EmbeddedCli *embeddedCliNew(EmbeddedCliConfig *config) {
     impl->rxBuffer.back = 0;
     impl->cmdMaxSize = config->cmdBufferSize;
     impl->bindingsCount = 0;
-    impl->maxBindingsCount = (uint16_t) (config->maxBindingCount + cliInternalBindingCount);
+    impl->maxBindingsCount = (uint16_t) (config->maxBindingCount + internalReservation);
     impl->lastChar = '\0';
     impl->invitation = config->invitation;
     impl->cursorPos = 0;
+    impl->autoCompleteOnEnter = config->autoCompleteOnEnter;
 
-    initInternalBindings(cli);
+    if (config->enableInternalHelp) {
+        initInternalBindings(cli);
+    }
 
     return cli;
 }
@@ -793,8 +811,10 @@ static void onControlInput(EmbeddedCli *cli, char c) {
         return;
 
     if (c == '\r' || c == '\n') {
-        // try to autocomplete command and then process it
-        onAutocompleteRequest(cli);
+        // try to autocomplete command and then process it (if enabled)
+        if (impl->autoCompleteOnEnter) {
+            onAutocompleteRequest(cli);
+        }
 
         writeToOutput(cli, lineBreak);
 
